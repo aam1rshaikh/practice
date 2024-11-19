@@ -1,0 +1,380 @@
+#[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$Sub = Read-Host -Prompt 'Input your Subscription  name'
+$VMName = Read-Host -Prompt 'Input the VM name'
+$RG = Read-Host -Prompt 'Input the RG name'
+#connect-AzAccount -identity
+Select-AzSubscription -Subscription $Sub
+$vms = Get-AzVM -ResourceGroupName $RG -Name $vMName
+foreach($vm in $vms) 
+    {
+       $ExportPath = "c:\Portalvalidation\"+$VMName+"_portalvalidation.xlsx"
+       $VMNames = $vm.Name 
+       write-host "Checking NIC configuration" -ForegroundColor Green
+       $nicdd = @()
+       $nicDetails = $vm.NetworkProfile.NetworkInterfaces 
+       if ($nicDetails.Count -gt 0)
+       {
+       foreach ($nicRef in $nicDetails) {
+       $nicId = $nicRef.Id
+       $nicName = ($nicId -split '/')[-1]
+       $nicss = Get-AzNetworkInterface -ResourceGroupName $RG -Name $nicname
+    
+       $nicdd += $nicss
+}
+}
+       $Sbs = ($vm.Id -split '/')[2]
+       $SubscriptionDetails = (Get-AzSubscription -SubscriptionId $Sbs).Name
+       $ResourceGroupName = $vm.ResourceGroupName
+       write-host "Checking OS and OS disk details" -ForegroundColor Green
+       $OsType = $vm.StorageProfile.OsDisk.OsType
+       #$OSVersion = $vm.StorageProfile.ImageReference.Sku
+       write-host "Checking Server region,OS Offer,Publisher, Plan" -ForegroundColor Green
+       $Region = $vm.Location
+       $VmSize = $vm.HardwareProfile.VmSize
+       $offer=$vm.StorageProfile.ImageReference.Offer
+       $Publisher = $vm.StorageProfile.ImageReference.Publisher
+       #$Image = $vm.StorageProfile.ImageReference.Id.Split("/")[-1]
+	if ($vm.StorageProfile.ImageReference.Id) 
+	{
+    	$Image = $vm.StorageProfile.ImageReference.Id.Split("/")[-1]
+	} 
+	else 	
+	{
+    	$Image = "The image ID is null"
+	}
+       $Plan=$vm.StorageProfile.ImageReference.SKU
+       write-host "Checking Virtual network configuration details" -ForegroundColor Green
+       $VirtualNetwork = $nics.IpConfigurations.subnet.Id.Split("/")[-3] 
+       write-host "Checking Subnet details" -ForegroundColor Green
+       $Subnet = $nics.IpConfigurations.subnet.Id.Split("/")[-1]
+       $OSDiskName = $vm.StorageProfile.OsDisk.Name 
+       $OSDiskSize = $vm.StorageProfile.OsDisk.DiskSizeGB
+       $OSDiskType = $vm.StorageProfile.OsDisk.ManagedDisk.StorageAccountType      
+        
+       $prv =  $nics.IpConfigurations | select-object -ExpandProperty PrivateIpAddress
+
+       write-host "Checking PPG details" -ForegroundColor Green
+       $ppggroup = Get-AzProximityPlacementGroup -ResourceGroupName $RG 
+       $ppgvmnames = $ppggroup.VirtualMachines.id
+       if($ppggroup -ne $null)
+             {
+              Write-Host " PPG is configured on the server." -ForegroundColor DarkYellow
+              $comm6 = "PPG is configured on the server"
+              $ppgname = $ppggroup.name  
+             $ppgrg = $ppggroup.ResourceGroupName 
+              $PPG = Get-AzProximityPlacementGroup -Name $ppgname -ResourceGroupName $ppgrg
+              $pname = $ppgname
+              $ppgresourcegroup = $ppgrg
+              $ppglocation = $PPG.Location
+              $ppgvm = ($ppgvmnames -split '/')[8]
+
+              }
+              else
+              {
+              Write-Host " PPG is Not configured on the server." -ForegroundColor Red
+              $comm6 = "PPG is Not configured on the server"
+              $pname ="NA"
+              $ppgresourcegroup = "NA"
+              $ppglocation="NA"
+              $ppgvm = "NA"
+              }
+       
+       #$ppgavset = $ppggroup.AvailabilitySets.id
+ #Accnetwork will give output in the form of true(ON) or false(Off)
+       write-host "Checking AV SET details" -ForegroundColor Green
+       
+       If ($vm.AvailabilitySetReference.Id -ne $null)
+            {
+            Write-Host " Server is a part of Availability Set. No action needed" -ForegroundColor DarkYellow
+            $availabilityset= $vm.AvailabilitySetReference.Id.Split("/")[-1]
+            }
+            Else
+            {
+            Write-Host " Action needed. Server is not a part of Availability Set.Need to configure it" -ForegroundColor Red
+            $availabilityset = "Null"
+            }
+            write-host "Checking boot diagnostics details" -ForegroundColor Green
+       $BootDiagnosticsstatus = $vm.DiagnosticsProfile.BootDiagnostics.Enabled
+       If ($vm.DiagnosticsProfile.BootDiagnostics -ne $null)
+            {
+            Write-Host " Boot Diagnostics is enabled for the server. No action needed" -ForegroundColor DarkYellow
+            $BootDiagnosticsstatus = $vm.DiagnosticsProfile.BootDiagnostics.Enabled
+            $Bootstorageaccount = $vm.DiagnosticsProfile.BootDiagnostics.StorageUri
+            }
+            Else
+            {
+            Write-Host " Action needed. Boot Diagnostics is enabled for the server.Need to configure it" -ForegroundColor Red
+            $BootDiagnosticsstatus = "Not Enabled"
+            $Bootstorageaccount = "Null"
+            }
+        write-host "Checking backup configuration" -ForegroundColor Green
+       $backupVaults = Get-AzRecoveryServicesVault
+        $recoveryVaultInfo = Get-AzRecoveryServicesBackupStatus -Name $vm.Name -ResourceGroupName $vm.ResourceGroupName -Type 'AzureVM'
+        if ($recoveryVaultInfo.BackedUp -eq $true)
+        {
+        Write-Host " Backup is Configured for the server. No action needed" -ForegroundColor DarkYellow
+
+        $comm4 = "Backup is Configured for the server. No action needed"
+            #Write-Host  "$($vm.Name) -BackedUp : Yes"
+            #Backup Recovery Vault Information
+            $vmBackupVault = $backupVaults | Where-Object {$_.ID -eq $recoveryVaultInfo.VaultId}
+
+            #Backup recovery Vault policy Information
+            $container = Get-AzRecoveryServicesBackupContainer -ContainerType AzureVM -VaultId $vmBackupVault.ID -FriendlyName $vm.Name #-Status "Registered" 
+            $backupItem = Get-AzRecoveryServicesBackupItem -Container $container -WorkloadType AzureVM -VaultId $vmBackupVault.ID
+        } #if ($recoveryVaultInfo.BackedUp -eq $true)
+        else 
+        {
+            Write-Host " Action needed. Backup is not Configured for the server.Need to configure it" -ForegroundColor Red
+            $comm4 = "Action needed. Backup is not Configured for the server.Need to configure it"
+            $vmBackupVault = $null
+            $container =  $null
+            $backupItem =  $null
+        } #else if ($recoveryVaul 
+            
+            
+            #$BackedUp = $recoveryVaultInfo.BackedUp
+            $RecoveryVaultName =  $vmBackupVault.Name
+            $RecoveryVaultPolicy = $backupItem.ProtectionPolicyName
+            $BackupHealthStatus = $backupItem.HealthStatus
+            $BackupProtectionStatus = $backupItem.ProtectionStatus
+            $LastBackupStatus = $backupItem.LastBackupStatus
+            $LastBackupTime = $backupItem.LastBackupTime
+            $BackupLatestRecoveryPoint = $backupItem.LatestRecoveryPoint
+            $RecoveryVault_ResourceGroupName = $vmBackupVault.ResourceGroupName
+            $RecoveryVault_Location = $vmBackupVault.Location
+            
+            write-host "Checking Load balancer details" -ForegroundColor Green
+            $Lb=  $nics.IpConfigurations.LoadBalancerBackendAddressPools.id
+            if($LB -ne $null)
+             {
+             Write-Host " Load balanlcer is Configured for the server. " -ForegroundColor DarkYellow
+             $comm5 = "Load balanlcer is Configured for the server"
+              $LBname = $lb.Split("/")[-3]
+              $LBresourcegroup = $Lb.Split("/")[4]
+              $LBs=Get-AzLoadBalancer -Name $LBname -ResourceGroupName $LBresourcegroup 
+          
+              $LBname = $LBname
+              $LBresourcegroup = $LBresourcegroup
+              $FrontendPrivateIpAddress = $lbs.FrontendIpConfigurations.PrivateIpAddress
+              $LBIPallocationmethod = $lbs.FrontendIpConfigurations.PrivateIpAllocationMethod
+              $Frontendport = $lbs.LoadBalancingRules.FrontendPort
+              $loaddistribution = $lbs.LoadBalancingRules.LoadDistribution
+              $backendport = $lbs.LoadBalancingRules.backendport
+              $LBprotocol = $lbs.LoadBalancingRules.Protocol         
+              $Probeprotocol = $lbs.Probes.protocol
+              $Probeport = $lbs.Probes.port
+              $LBsku =   $lbs.Sku.Name
+              $floatingIP = $lbs.LoadBalancingRules.EnableFloatingIP
+              
+             }
+                else
+
+             {
+             Write-Host " Load balanlcer is not Configured for the server" -ForegroundColor Red
+             $comm5 = "Load balanlcer is not Configured for the server"
+             $LBname = "NA"
+             $LBresourcegroup = "NA"
+             $FrontendPrivateIpAddress = "NA"
+             $LBIPallocationmethod = "NA"
+             $Frontendport = "NA"
+             $loaddistribution = "NA"
+             $backendport = "NA"
+             $LBprotocol = "NA"        
+             $Probeprotocol = "NA"
+             $Probeport = "NA"
+             $LBsku =   "NA"
+             $floatingIP = "NA"
+             $IdleTimeoutInMinutes ="NA"
+             }
+
+            write-host "checking sql Virtual machine License type, applicable for DB server and it should be Azure hybrid benifit " -ForegroundColor Green
+            $sqlvirtualmachine=  Get-AzSqlVM -ResourceGroupName $ResourceGroupName -Name $VMNames -ErrorAction SilentlyContinue
+            if ($sqlvirtualmachine -ne $null )
+            {
+            $sqlvirtualmachine1 = $sqlvirtualmachine| select LicenseType
+
+            }
+            else {
+             $sqlvirtualmachine1 = "Not a DB Server"
+             }
+          
+            $array10=@()
+            foreach ($x in $vm)
+            {
+            $obj10 = new-object -TypeName PSobject
+            $obj10 | Add-Member -MemberType NoteProperty -Name "VMName" -Value $VMNames
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Resource Group" -Value $ResourceGroupName
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Subscription" -Value $SubscriptionDetails
+            $obj10 | Add-Member -MemberType NoteProperty -Name "VM Size" -Value $VmSize
+            $obj10 | Add-Member -MemberType NoteProperty -Name "OS Type" -Value $OsType
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Image Used" -Value $Image
+            $obj10 | Add-Member -MemberType NoteProperty -Name "OS Offer" -Value $offer
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Publisher" -Value $Publisher
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Plan" -Value $Plan
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Region" -Value $Region
+            $obj10 | Add-Member -MemberType NoteProperty -Name "OS Disk name" -Value $OSDiskName
+            $obj10 | Add-Member -MemberType NoteProperty -Name "OS Disk Size" -Value $OSDiskSize
+            $obj10 | Add-Member -MemberType NoteProperty -Name "OS Disk Type" -Value $OSDiskType
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Vnet" -Value $VirtualNetwork
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Subnet" -Value $Subnet
+            $obj10 | Add-Member -MemberType NoteProperty -Name "BootDiagnostics status" -Value $BootDiagnosticsstatus
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Private IP Address of VM" -Value $prv
+            $obj10 | Add-Member -MemberType NoteProperty -Name "Boot Diagnostics Storage Account" -Value $Bootstorageaccount
+            $obj10 | Add-Member -MemberType NoteProperty -Name "AV Set Details" -Value $availabilityset
+            $obj10 | Add-Member -MemberType NoteProperty -Name "License Type" -Value $LicenseType
+            $obj10 | Add-Member -MemberType NoteProperty -Name "License Status" -Value $comm2
+	        $obj10 | Add-Member -MemberType NoteProperty -Name "Accelerated Networking Enabled" -Value $Accnetwork
+            $obj10 | Add-Member -MemberType NoteProperty -Name "sql Virtual machine License type" -Value $sqlvirtualmachine1
+            
+            $array10 += $obj10
+            }
+            $array10 | Export-Excel -Path $ExportPath -WorksheetName "Portal Level Validation"
+
+       write-host "Checking data disk configuration" -ForegroundColor Green
+       $DataDiskCount = $vm.StorageProfile.DataDisks
+            
+         if ($DataDiskCount.Count -gt 0) {
+            Write-Host " Data Disks are attached to the server" -ForegroundColor DarkYellow
+            $DataDiskStatus = "Data Disks are attached to the server"
+            $array11 = @()
+
+      foreach ($disk in $DataDiskCount) {
+        $obj11 = New-Object PSObject
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Server Name" -Value $VMNames
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Status" -Value $DataDiskStatus
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk name on Azure portal" -Value $disk.Name
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Lun ID" -Value $disk.Lun
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Size" -Value $disk.DiskSizeGB
+        $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Type" -Value $disk.ManagedDisk.StorageAccountType
+
+        $array11 += $obj11
+    }
+} else {
+    Write-Host " No Data Disks are attached to the server" -ForegroundColor Red
+    $DataDiskStatus = "No Data Disks are attached to the server"
+    $array11 = @()
+    $obj11 = New-Object PSObject
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Server Name" -Value $VMNames
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Status" -Value $DataDiskStatus
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk name on Azure portal" -Value "NA"
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Lun ID" -Value "NA"
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Size" -Value "NA"
+    $obj11 | Add-Member -MemberType NoteProperty -Name "Data Disk Type" -Value "NA"
+
+    $array11 += $obj11
+}
+$array11| Export-Excel -Path $ExportPath -WorksheetName "Data Disks Details"
+           
+            
+
+         write-host "Checking License Type" -ForegroundColor Green
+       $LicenseType = $vm.LicenseType
+       if ($LicenseType -contains 'Windows_Server')
+       {
+        Write-Host " No Action Needed. Windows License is  configured as Windows_server." -ForegroundColor DarkYellow
+        $comm2 = "No Action Needed. Windows License is  configured as Windows_server"
+        }
+        Else{ Write-Host " Action Needed. Windows License is not configured.Need to configured it" -ForegroundColor Red
+        $comm2 = "Action Needed. Windows License is not configured.Need to configured it"
+        }
+       $array113=@()
+
+       
+            foreach ($a in $nicdd )
+            {
+            
+            
+            $Accnetwork = $a.EnableAcceleratedNetworking
+            $nicnaame = $a.Name
+        if ($Accnetwork -eq $true)
+       {
+       Write-Host " Accelerated networking is enabled on $nicnaame. " -ForegroundColor DarkYellow
+       $comm89 ="Accelerated networking is enabled on nic nicnaame."
+       }else{
+       Write-Host " Accelerated networking is not enabled on $nicnaame . " -ForegroundColor Red
+       $comm89 ="Accelerated networking is not enabled on nic $nicnaame."
+       }
+       write-host "Checking NIC Assignment Type. It should be Static" -ForegroundColor Green
+       $NICIP = $a.IpConfigurations 
+       if ($NICIP.PrivateIpAllocationMethod -eq "static")
+       {
+       Write-Host " NIC Assignment Type is static. No action needed " -ForegroundColor DarkYellow
+       $comm3 ="NIC Assignment Type is static. No action needed."
+       }else{
+       Write-Host " Action Needed NIC Assignment Type is Dynamic.Need to configure it as static. " -ForegroundColor Red
+       $comm3 ="Action Needed NIC Assignment Type is Dynamic.Need to configure it as static"
+       }
+            $obj113=new-object -TypeName PSobject
+            $obj113 | Add-Member -MemberType NoteProperty -Name "ServerName" -Value $VMNames
+            $obj113 | Add-Member -MemberType NoteProperty -Name "NIC Assignment Status" -Value $comm3
+            #$obj113 | Add-Member -MemberType NoteProperty -Name "Total NIC Attached to VM" -Value $a.count
+            $obj113 | Add-Member -MemberType NoteProperty -Name "NIC Name" -Value $nicnaame
+            $obj113 | Add-Member -MemberType NoteProperty -Name "NIC IP" -Value $NICIP.PrivateIpAddress
+            $obj113 | Add-Member -MemberType NoteProperty -Name "Accelerated networking status" -Value $comm89
+            #$obj13 | Add-Member -MemberType NoteProperty -Name "NIC Assignment" -Value $NICIP.PrivateIpAllocationMethod
+            $array113+=$obj113
+            }
+            $array113| Export-Excel -Path $ExportPath -WorksheetName "NIC Details"
+           
+
+            $array12=@()
+            foreach ($y in $vm)
+            {
+            $obj12=new-object -TypeName PSobject
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Machine Name" -Value $VMNames
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Backup Enabled?" -Value $comm4
+            $obj12 | Add-Member -MemberType NoteProperty -Name "RSV Name" -Value $RecoveryVaultName
+            $obj12 | Add-Member -MemberType NoteProperty -Name "RSV Policy" -Value $RecoveryVaultPolicy
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Backup Health Status" -Value $BackupHealthStatus
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Backup Protection status" -Value $BackupProtectionStatus
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Last Backup Status" -Value $LastBackupStatus
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Last Backup Time" -Value $LastBackupTime
+            $obj12 | Add-Member -MemberType NoteProperty -Name "Latest Recovery Point" -Value $BackupLatestRecoveryPoint
+            $obj12 | Add-Member -MemberType NoteProperty -Name "RSV RG name" -Value $RecoveryVault_ResourceGroupName
+            $obj12 | Add-Member -MemberType NoteProperty -Name "RSV Location" -Value $RecoveryVault_Location
+            
+            $array12+=$obj12
+            }
+            $array12| Export-Excel -Path $ExportPath -WorksheetName "Backup Details"
+
+            $array22= @()
+            foreach ($l in $vm)
+            {           
+            $obj22 = new-object -TypeName PSobject
+            $obj22 | Add-Member -MemberType NoteProperty -Name "ServerName" -Value $VMNames -Force
+            $obj22 | Add-Member -MemberType NoteProperty -Name "PPG Status" -Value $comm6
+            $obj22 | Add-Member -MemberType NoteProperty -Name "PPG Name" -Value $pname
+            $obj22 | Add-Member -MemberType NoteProperty -Name "PPG RG" -Value $ppgresourcegroup
+            #$obj14 | Add-Member -MemberType NoteProperty -Name "PPG AV sets" -Value $ppgavset 
+            $obj22 | Add-Member -MemberType NoteProperty -Name "PPG Location" -Value $ppglocation
+            $obj22 | Add-Member -MemberType NoteProperty -Name "VMs configured in PPG" -Value $ppgvm
+            $array22+= $obj22
+             }
+             $array22| Export-Excel -Path $ExportPath -WorksheetName "PPG details"
+            
+
+            $array18 = @()
+            foreach ($pl in $vm)
+            {
+            $obj18=new-object -TypeName PSobject
+            $obj18 |Add-Member -MemberType NoteProperty -name "LBname" -Value $LBname
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB configured?" -Value  $comm5
+            $obj18 |Add-Member -MemberType NoteProperty -name "Load balancer Resource Group" -Value  $LBresourcegroup
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB fronend IP Address" -Value  $FrontendPrivateIpAddress
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB IP Allocation Method" -Value  $LBIPallocationmethod
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB Frontend port" -Value  $Frontendport
+            $obj18 |Add-Member -MemberType NoteProperty -name "Load distribution" -Value  $loaddistribution
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB backend port" -Value  $backendport
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB protocol" -Value  $LBprotocol 
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB Probe Protocol" -Value  $Probeprotocol
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB Probe Port" -Value  $Probeport
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB SKU" -Value  $LBsku
+            $obj18 |Add-Member -MemberType NoteProperty -name "LB Floating IP Enabled?" -Value  $floatingIP
+            $array18+=$obj18
+            }
+            $array18| Export-Excel -Path $ExportPath -WorksheetName "Load balancer details"
+
+            $tags = $vms |select -ExpandProperty Tags |convertto-json | convertfrom-json| Export-Excel -path  $ExportPath -WorksheetName "Tags Details"
+ 
+}

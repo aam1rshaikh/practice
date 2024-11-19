@@ -1,0 +1,3 @@
+$regpath1= "HKLM:\SOFTWARE\WOW6432Node\BigFix\MDLZ" 
+New-Item -Path $regpath1 -Force | Out-Null
+New-ItemProperty -Path $regpath1 -Name DeviceOwner -PropertyType String -Value ACN -Force | Out-Null

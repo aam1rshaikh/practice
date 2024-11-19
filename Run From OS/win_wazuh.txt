@@ -1,0 +1,12 @@
+#param($ipaddress)
+#$ipaddress="170.162.65.236"
+#$password = "H0UBikexrEs7VEJWEaJh0xBoHuJ7cNmS"
+
+echo "Wazuh agent installation started..."
+
+$return = Start-Process "msiexec.exe" -ArgumentList '/i C:\wazuh\wazuh-agent-4.7.5-1.msi /q WAZUH_MANAGER="170.162.65.236" WAZUH_REGISTRATION_SERVER="170.162.65.236" WAZUH_REGISTRATION_PASSWORD="H0UBikexrEs7VEJWEaJh0xBoHuJ7cNmS" WAZUH_AGENT_GROUP="windows,it-site,accenture,azure"' -Wait -passthru
+#$return = Msiexec /i C:\wazuh\wazuh-agent-4.7.5-1.msi /q WAZUH_MANAGER="170.162.65.236" WAZUH_REGISTRATION_SERVER="170.162.65.236" WAZUH_REGISTRATION_PASSWORD=$password
+
+If (@(0,3010) -contains $return.exitcode) { sc.exe query wazuhsvc } else {write-error $return.exitcode }
+
+echo "Wazuh agent installation finished"

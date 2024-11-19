@@ -1,0 +1,35 @@
+$VMName = Read-Host -Prompt 'Enter Server Name'
+
+$Env = Read-Host -Prompt 'Enter Env (Prod/NonProd)'
+
+
+ADD-ADGroupMember “Azure Wintel KRFTAdmin rename” –members "$VMName$"
+
+ADD-ADGroupMember “Azure Wintel Guest disable” –members “$VMName$”
+
+
+if($Env -eq "Prod")
+
+{
+
+    ADD-ADGroupMember “MDZ bigfixCIS prod” –members "$VMName$"
+    ADD-ADGroupMember “MDZ-KRFT–P-SQLODA CIS STD” –members “$VMName$”
+
+}
+
+elseif($Env -eq "NonProd")
+
+{
+
+    ADD-ADGroupMember “MDZ bigfixCISNonprod” –members "$VMName$"
+    ADD-ADGroupMember “MDZ-KRFT–NP-SQLODA CIS STD” –members “$VMName$”
+
+}
+
+else
+
+{
+
+    Write-Host "Invalid environment specified."
+
+}

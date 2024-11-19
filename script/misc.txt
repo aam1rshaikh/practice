@@ -1,0 +1,16 @@
+az login
+az account set --subscription "SUBSCRIPTION name"
+Terraform init
+terraform plan --out "myvm.tfplan"
+
+
+================================================================================================================
+
+Primary - interface matrix 3 ,register DNS - tick
+seondary- interface matrix - tick, DNS untick-- Default gateway add and subnet mask for secondary nic should of primary NIC
+
+===============================================================================================================
+
+install-WindowsFeature -Name Windows-Defender
+
+================================================================================================================

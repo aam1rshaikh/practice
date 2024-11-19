@@ -1,0 +1,533 @@
+$serverlist = Get-Content $env:USERPROFILE\desktop\servers1.txt
+#$Servername = Read-Host -Prompt 'Input the VM name'
+foreach ($server in $serverlist)
+{
+$ExportPath = "C:\servervalidation\"+$server+"_ServerLevelValidation.xlsx"
+Write-Host "Validating server: $server" -ForegroundColor Cyan
+
+write-host "Checking OS configuration" -ForegroundColor Green
+$OS=Get-CimInstance Win32_OperatingSystem -ComputerName $server
+write-host "Checking Domain join status" -ForegroundColor Green
+$domain = gwmi win32_computersystem -ComputerName $server
+$dname = $domain.domain 
+if ($dname -eq "KRFT.Net")
+{
+Write-Host " Server $server is part of $dname domain" -ForegroundColor DarkYellow
+}
+else{
+Write-Host " Server $server is not a part of $dname domain" -ForegroundColor Red
+}
+$firewallStatus = Get-NetFirewallProfile | select name, Enabled
+write-host "Checking Installed Software Status" -ForegroundColor Green
+$installed_software = Get-WmiObject -Class Win32_Product -ComputerName $server| Select-Object Name, Version, InstallDate
+#$required_software = @("Wazuh Agent","Splunk OpenTelemetry collector","BigFix Client","CrowdStrike Sensor Platform")
+write-host "Checking services status" -ForegroundColor Green
+$services = Get-Service -ComputerName $server |select-object Status,Name
+$required_service = Get-Service -ComputerName $server "RemoteRegistry","CSFalconService","splunk-otel-collector","WazuhSvc","BESClient","wuauserv"
+$H=Get-WmiObject -computer $server Win32_ComputerSystem | where {$_.TotalPhysicalMemory}
+$C = [Math]::Round(($H.TotalPhysicalMemory/ 1GB),2) 
+write-host "Checking Time Zone of the server" -ForegroundColor Green
+$timezone = Invoke-Command -ComputerName $server -ScriptBlock {Get-TimeZone}
+$current_time = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), "$($timezone. ID)")
+write-host "Timezone of the server is $timezone " -ForegroundColor DarkYellow
+write-host "Checking Windows defender status" -ForegroundColor Green
+$windowsdefender=Invoke-Command -computername $server -scriptblock{(Get-WindowsFeature |where {$_.displayName -eq "Windows Defender Antivirus"}).Installstate}
+if($windowsdefender -like "*Available*")
+{
+write-host " Windows Defender is Not-Installed" -ForegroundColor Red
+$windefender =  "NOT-INSTALLED"
+}
+else
+{
+write-host " Windows Defender is Installed" -ForegroundColor Red
+$windefender =  "INSTALLED"
+}
+$Totalprocessor = $null
+$processor = $null
+$processors = (Get-WmiObject -Class Win32_Processor -ComputerName $server).numberoflogicalprocessors
+Foreach ($Processor in $processors) 
+{
+$Totalprocessor = $Totalprocessor + $processor
+}
+$Pagefile = Get-WmiObject WIN32_Pagefile -ComputerName $server 
+$wsus = Invoke-Command -ComputerName $server {Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'}
+write-host "Checking Installed patch details" -ForegroundColor Green
+$windowspatchelist = Get-HotFix -ComputerName $server | select -Last 5 | select Source,Description,HotFixID, InstalledOn,InstalledBy
+write-host "Checking Drive Details" -ForegroundColor Green
+$drive = gwmi -Class win32_volume -ComputerName $server -erroraction Ignore
+write-host "Checking Licensing Status" -ForegroundColor Green
+$Licensingdetails=Get-CimInstance -ClassName SoftwareLicensingProduct -ComputerName $erv | where {$_.PartialProductKey}
+if (($Licensingdetails).LicenseStatus -eq 1 )
+{
+write-host " License Status is Activated. No Further action is Needed" -ForegroundColor DarkYellow
+$LicenseStatus= "License Status is Activated. No Further action is Needed"
+}
+else {
+write-host " License Status is Not Activated. Need to Activate it" -ForegroundColor Red
+$LicenseStatus= "License Status is Not Activated. Need to Activate it"
+}
+write-host "Checking IE Status" -ForegroundColor Green
+$IEAdminRegistryKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+$IEUserRegistryKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
+
+# Check if IE Enhanced Security Configuration is enabled for administrators
+$IEAdminRegistryValue = (Get-ItemProperty -Path $IEAdminRegistryKey -Name IsInstalled).IsInstalled
+if ($IEAdminRegistryValue -eq 1) {
+    write-host " IE Admin Status is ON. It should be in off state" -ForegroundColor Red
+    $IEAdminStatus = "on"
+} else {
+    Write-Host " IE Admin Status is off.No Further action is Needed" -ForegroundColor DarkYellow
+    $IEAdminStatus = "off"
+}
+
+# Check if IE Enhanced Security Configuration is enabled for users
+$IEUserRegistryValue = (Get-ItemProperty -Path $IEUserRegistryKey -Name IsInstalled).IsInstalled
+if ($IEUserRegistryValue -eq 1) {
+write-host " IE User Status is ON. It should be in off state" -ForegroundColor Red
+    $IEUserStatus = "on"
+} else {
+    Write-Host " IE User Status is off.No Further action is Needed" -ForegroundColor DarkYellow
+    $IEUserStatus = "off"
+}
+write-host "Checking Memory Dump Configuration" -ForegroundColor Green
+$CrashBehaviour = Invoke-Command -ComputerName  $server  -ScriptBlock { Get-WmiObject Win32_OSRecoveryConfiguration } -ErrorAction 0
+$abcd = Invoke-Command -ComputerName  $server  -ScriptBlock { Get-ItemPropertyValue -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CrashControl\' -Name 'CrashDumpEnabled' } 
+$debugPath = $CrashBehaviour.DebugFilePath
+if ($abcd -eq 1) {
+    Write-Host " Complete memory dump is configured. No Action Needed" -ForegroundColor DarkYellow
+   $mstatus = "Complete memory dump is configured."
+} elseif ($abcd -eq 2) {
+   Write-Host " Kernel memory dump is configured.Need to configure Complete Mmeory Dump." -ForegroundColor Red
+   $mstatus=  "Kernel memory dump is configured."
+} elseif ($abcd -eq 3) {
+    Write-Host " Small memory dump is configured.Need to configure Complete Mmeory Dump." -ForegroundColor Red
+    $mstatus ="Small memory dump is configured."
+
+} elseif ($abcd -eq 7) {
+    Write-Host " Automatic memory dump is configured.Need to configure Complete Mmeory Dump." -ForegroundColor Red
+    $mstatus= "Automatic memory dump is configured."
+  }else {
+    Write-Host " No memory dump is configured. Need to configure Complete Mmeory Dump." -ForegroundColor Red
+    $mstatus=  "No memory dump is configured."
+}
+
+if ($debugPath -eq "C:\MemoryDump\MEMORY.DMP") {
+        Write-Host " Debug path is already set to C:\MemoryDump\MEMORY.DMP. No action needed." -ForegroundColor DarkYellow
+        $dpath = "Debug path is already set to C:\MemoryDump\MEMORY.DMP. No action needed"
+    } else {
+        Write-Host " Debug path is not set to C:\MemoryDump\MEMORY.DMP. Perform configuration as per standards." -ForegroundColor Red
+        $dpath = "Debug path is not set to C:\MemoryDump\MEMORY.DMP. Perform configuration as per standards."
+        }
+
+
+$CurrentPagefileconfig= Invoke-Command -ComputerName  $server  -ScriptBlock { Get-ItemPropertyValue -path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name 'pagingfiles' } -ErrorAction 0
+
+
+$array=@()
+$obj=new-object -TypeName PSobject
+$obj | Add-Member -MemberType NoteProperty -Name "Server Name" -Value $server
+$obj | Add-Member -MemberType NoteProperty -Name "Operating System" -Value $OS.caption
+$obj | Add-Member -MemberType NoteProperty -Name "Domain joinstatus" -Value $domain.Domain
+$obj | Add-Member -MemberType NoteProperty -Name "RAM in GB" -Value $C
+$obj | Add-Member -MemberType NoteProperty -Name "Total VCPUs" -Value $processors
+$obj | Add-Member -MemberType NoteProperty -Name "License Staus" -Value $LicenseStatus
+$obj | Add-Member -MemberType NoteProperty -Name 'Timezone' -Value $timezone.DisplayName
+$obj | Add-Member -MemberType NoteProperty -Name 'Current Time' -Value $current_time
+$array += $obj
+$array | Export-Excel -Path $ExportPath -WorksheetName "OS Level details" -AutoSize -StartRow 2 -StartColumn 1 -TableName ServerDetails
+
+write-host "Checking Firewall Status" -ForegroundColor Green
+$allDisabled = $firewallStatus | ForEach-Object { $_.Enabled -eq "False" }
+$array110 = @()
+foreach ($FW in $firewallStatus)
+{
+$fwname = $FW.name
+if ($allDisabled) {
+    $fwstatus =write-host " $fwname Firewall Profile is Disabled. No action needed." -ForegroundColor DarkYellow
+    $fwstatus1 = "$fwname Firewall Profile is Disabled. No action needed."
+} 
+else {
+
+        $fwstatus= write-host " $fwname Firewall is Enabled. Check it and disable it." -ForegroundColor Red
+        $fwstatus1 = "$fwname Firewall is Enabled. Check it and disable it."
+      }
+$obj110 = New-Object -TypeName PSobject
+            $obj110 | Add-Member -MemberType NoteProperty -Name "Firewall Name" -Value $FW.Name
+            $obj110 | Add-Member -MemberType NoteProperty -Name "Firewall Enabled" -Value $FW.Enabled
+            $obj110 | Add-Member -MemberType NoteProperty -Name "Firewall Status" -Value $fwstatus1 
+            $array110 += $obj110
+}
+$array110 | Export-Excel -Path $ExportPath -WorksheetName "Firewall Status" -AutoSize -StartRow 2 -StartColumn 1 -TableName FirewallStatus
+$array2 = @()
+foreach ($y in $installed_software) {
+
+    #$is_required = $installed_software.Where{$_.Name -eq $y}
+
+    # Set the status
+    #if ($is_required) {
+        #$status = "Installed"
+    #} else {
+    
+    #    $status = "Not Installed"
+    #}
+
+    
+    # Create a new PSObject to store the software status
+    $obj2 = New-Object PSObject
+    $obj2 | Add-Member -MemberType NoteProperty -Name "Software Name" -Value $y.name
+    $obj2 | Add-Member -MemberType NoteProperty -Name "Software Version" -Value ($y).Version
+    $obj2 | Add-Member -MemberType NoteProperty -Name "Software Installed Date" -Value $y.InstallDate
+    #$obj2 | Add-Member -MemberType NoteProperty -Name "Software Status" -Value $status
+
+    # Add the PSObject to the array
+    $array2 += $obj2
+$array2 | Export-Excel -Path $ExportPath -WorksheetName "Software Installation Status" -AutoSize -StartRow 2 -StartColumn 1 -TableName Softwarestatus
+}
+$array3 = @()
+
+foreach ($service in $required_service) {
+
+    # Check if the service is the required service
+    if ($services.name  -eq $service.Name -and $service.Status -eq "Running") {
+
+         # Set the status to "Running"
+        
+        $status = "Running"
+
+    } else {
+        
+        # Set the status to "Not Running"
+        $status = "Not Running"
+    }
+        # Create a new PSObject to store the service status
+        $obj3 = New-Object PSObject
+        $obj3 | Add-Member -MemberType NoteProperty -Name "ServiceName" -Value $service
+        $obj3 | Add-Member -MemberType NoteProperty -Name "ServiceStatus" -Value $status
+
+        # Add the PSObject to the array
+        $array3 += $obj3
+   
+$array3 | Export-Excel -Path $ExportPath -WorksheetName "Services Status" -AutoSize -StartRow 2 -StartColumn 1 -TableName ServiceStatus
+}
+write-host "Checking Pagefile configuration" -ForegroundColor Green
+$array4=@()
+foreach ($PFI in $Pagefile) {
+
+if ($PFI.InitialSize -eq 0 -and $Pagefile.MaximumSize -eq 0) {
+     write-host " Pagefile is not set. Kindly configure it as per mdlz standards" -ForegroundColor Red
+    $status = "The pagefile is not set."
+}
+
+  $obj4 = new-object -TypeName PSObject
+  $obj4 | Add-Member -MemberType NoteProperty -Name "Pagefile" -Value $PFI.name
+  $obj4 | Add-Member -MemberType NoteProperty -Name "Initial Size" -Value $PFI.InitialSize
+  $obj4 | Add-Member -MemberType NoteProperty -Name "Maximum Size" -Value $PFI.MaximumSize
+  $obj4 | Add-Member -MemberType NoteProperty -Name "Status" -Value "$obj4.Status"
+  $array4 += $obj4
+}
+
+# Check if the pagefile is system managed
+foreach ($obj4 in $array4) {
+  if ($obj4.IsSystemManaged) {
+    write-host " Pagefile is set as System Managed, It should be set as Custom as per mdlz standards." -ForegroundColor Red
+    $obj4.Status = "Pagefile is set as System Managed, It should be set as Custom as per mdlz standards"
+  } else {
+  write-host " Pagefile is set as Custom. No action Needed" -ForegroundColor DarkYellow
+    $obj4.Status = "Pagefile is set as Custom. No action Needed"
+  }
+  $array4 | Export-Excel -Path $ExportPath -WorksheetName "PageFile Info" -AutoSize -StartRow 2 -StartColumn 1 -TableName PagefileInfo
+}
+$array5=@()
+foreach ($WD  in $windefender)
+{
+$obj5 = new-object -TypeName PSobject
+$obj5 | Add-Member -MemberType NoteProperty -Name "Windows defender Status" -Value $WD
+$array5 += $obj5 
+$array5 | Export-Excel -Path $ExportPath -WorksheetName "Windows Defender Status" -AutoSize -StartRow 2 -StartColumn 1 -TableName WindowsDefenderStatus
+}
+write-host "Checking WSUS details" -ForegroundColor Green
+$array6=@()
+foreach($reg in $server)
+{
+
+$au = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' 
+if ($au) {
+
+$expectedValues = @{
+            'AUOptions' = 2
+            'DetectionFrequency' = 1
+            'DetectionFrequencyEnabled' = 1
+            'NoAutoUpdate' = 0
+            'UseWUServer' = 1
+            }
+foreach ($key in $expectedValues.Keys) {
+            $expectedValue = $expectedValues[$key]
+            $actualValue = $au.$key
+
+            if ($actualValue -eq $expectedValue) {
+
+Write-Host " WSUS EU registry key $Key is configured as $expectedValue" -ForegroundColor DarkYellow
+
+$obj6 = New-Object -TypeName Object
+$obj6 | Add-Member -MemberType NoteProperty -Name 'MachineName' -Value $server
+$obj6 | Add-Member -MemberType NoteProperty -Name 'AUOptions' -Value $au.AUOptions
+$obj6 | Add-Member -MemberType NoteProperty -Name 'DetectionFrequency' -Value $au.DetectionFrequency
+$obj6 | Add-Member -MemberType NoteProperty -Name 'DetectionFrequencyEnabled' -Value $au.DetectionFrequencyEnabled
+$obj6 | Add-Member -MemberType NoteProperty -Name 'NoAutoUpdate' -Value $au.NoAutoUpdate
+$obj6 | Add-Member -MemberType NoteProperty -Name 'UseWUServer' -Value $au.UseWUServer
+}
+
+else
+{
+
+Write-Host " WSUS EU registry key $Key is not configured as $expectedValue. Nedd to configure it properly" -ForegroundColor Red
+}
+}
+
+$array6 += $obj6
+}
+
+$array6 | Export-Excel -Path $ExportPath -WorksheetName "WSUS AU Reg. setting" -AutoSize -StartRow 2 -StartColumn 1 -TableName Wsusstatus
+}
+
+
+$array7=@()
+foreach ($Disks  in $drive)
+{
+$obj7 = new-object -TypeName PSobject
+$obj7 | Add-Member -MemberType NoteProperty -Name "Drive letter" -Value $disks.Name
+$obj7 | Add-Member -MemberType NoteProperty -Name "Total Size" -Value ($disks.Capacity/1GB)
+$obj7 | Add-Member -MemberType NoteProperty -Name "Free Space" -Value ($disks.FreeSpace/1GB)
+$obj7 | Add-Member -MemberType NoteProperty -Name "Volume Name" -Value $disks.Label
+$array7 += $obj7 
+$array7 | Export-Excel -Path $ExportPath -WorksheetName "Disks Details" -AutoSize -StartRow 2 -StartColumn 1 -TableName DiskDetails
+}
+$array8=@()
+foreach($patch in $windowspatchelist)
+{
+$obj8 = New-Object -TypeName Object
+$obj8 | Add-Member -MemberType NoteProperty -Name 'VMName' -Value $server
+$obj8 | Add-Member -MemberType NoteProperty -Name 'PatchType' -Value $patch.Description
+$obj8 | Add-Member -MemberType NoteProperty -Name 'PatchNumber' -Value $patch.HotFixID
+$obj8 | Add-Member -MemberType NoteProperty -Name 'InstalledDate' -Value $patch.InstalledOn.ToString()
+$obj8 | Add-Member -MemberType NoteProperty -Name 'InstalledBy' -Value $patch.InstalledBy
+$array8 += $obj8 
+$array8 | Export-Excel -Path $ExportPath -WorksheetName "Patch Details" -AutoSize -StartRow 2 -StartColumn 1 -TableName PatchDetails
+}
+write-host "Checking TLS/SSL configuartion. Check Key values properly in output file" -ForegroundColor Green
+$array9=@()
+foreach($reg in $server)
+{
+
+$a = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Client' 
+$b = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\server'
+$k = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Client'
+$d = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\server'
+$e = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client'
+$f = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\server'
+$g = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Client'
+$l = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\server'
+$i = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client'
+$j = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client'
+
+$obj9 = New-Object -TypeName Object
+$obj9 | Add-Member -MemberType NoteProperty -Name 'MachineName'   -Value $server
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.0 Client' -Value $a.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.0 Server' -Value $b.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.1 Client' -Value $k.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.1 Server' -Value $d.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.2 Client' -Value $e.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'TLS 1.2 Server' -Value $f.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'SSL 2.0 Client' -Value $g.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'SSL 2.0 Server' -Value $l.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'SSL 3.0 Client' -Value $i.Enabled
+$obj9 | Add-Member -MemberType NoteProperty -Name 'SSL 3.0 Server' -Value $j.Enabled
+
+$array9 += $obj9 
+$array9 | Export-Excel -Path $ExportPath -WorksheetName "TLSSSL Registry Settings" -AutoSize -StartRow 2 -StartColumn 1 -TableName TLSSSL
+}
+write-host "Checking Bigfix Tattoing registry Key value. it should be MDLZ = ACN" -ForegroundColor Green
+$array25=@()
+foreach ($servers in $server) 
+{
+
+  $BigfixTattooing = Get-ItemProperty -Path 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\BigFix\MDLZ'
+  if ($BigfixTattooing) {
+  write-host " BigFix tattoing Registry key is present.No action needed. Check the key value properly in output file" -ForegroundColor DarkYellow
+    $status1 = "The Bigfix tattooing registry key is present"
+  } else {
+  write-host " BigFix tattoing Registry key is not present, Need to configure it" -ForegroundColor Red
+    $status1 = "The Bigfix tattooing registry key does not exist"
+  }
+
+  $obj25 = New-Object -TypeName Object
+  $obj25 | Add-Member -MemberType NoteProperty -Name 'MachineName' -Value $servers
+  $obj25 | Add-Member -MemberType NoteProperty -Name 'Bigfix Tattooing should be ACN' -Value $BigfixTattooing.DeviceOwner
+  $obj25 | Add-Member -MemberType NoteProperty -Name 'Status' -Value $status1
+
+  $array25 += $obj25
+
+  # Export the results to Excel
+  $array25 | Export-Excel -Path $ExportPath -WorksheetName "Bigfix Tattooing Reg. Settings" -AutoSize -StartRow 2 -StartColumn 1 -TableName BigFixTatooing 
+}
+$array27=@()
+foreach($ie in $server)
+{
+$obj27 = New-Object -TypeName Object
+$obj27 | Add-Member -MemberType NoteProperty -Name 'MachineName'   -Value $ie
+$obj27 | Add-Member -MemberType NoteProperty -Name 'IEAdminStatus' -Value $IEAdminStatus
+$obj27 | Add-Member -MemberType NoteProperty -Name 'IEUserStatus' -Value $IEUserStatus
+
+
+$array27 += $obj27
+$array27 | Export-Excel -Path $ExportPath -WorksheetName "IE Status" -AutoSize -StartRow 2 -StartColumn 1 -TableName IEStatus
+}
+
+$array21=@()
+foreach( $rt in $CrashBehaviour )
+{
+$obj21 = New-Object -TypeName Object
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Machine Name'          -Value $server
+#$obj21 | Add-Member -MemberType NoteProperty -Name 'Debug Type'            -Value $CrashBehaviour.DebugInfoType
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Memory Dump Path'      -Value $CrashBehaviour.DebugFilePath
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Auto Reboot'           -Value $CrashBehaviour.AutoReboot
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Overwrite Existing Debug File'   -Value $CrashBehaviour.OverwriteExistingDebugFile
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Debug Type'        -Value $mstatus
+$obj21 | Add-Member -MemberType NoteProperty -Name 'Debug Path'        -Value $dpath
+
+$array21 += $obj21
+$array21 | Export-Excel -Path $ExportPath -WorksheetName "Memery Dump details" -AutoSize -StartRow 2 -StartColumn 1 -TableName memorydumpdetails
+}
+
+write-host "Checking Cluster Details" -ForegroundColor Green
+$s = Get-Service -Name 'ClusSvc' -ComputerName $server -ErrorAction SilentlyContinue
+foreach ($ty in $server )
+{
+
+if($s -ne $null)
+{
+write-host " Cluster is configured" -ForegroundColor DarkYellow
+$clusternames = Invoke-Command -ComputerName $ty -ScriptBlock {(Get-Cluster).name}
+$rty = Invoke-Command -ComputerName $ty -ScriptBlock {Get-ClusterNode} -ErrorAction SilentlyContinue
+$clusterNodesname = $rty.name
+$clusterNodesstate = $rty.state
+
+$clussterresource = Invoke-Command -ComputerName $ty -ScriptBlock {Get-ClusterResource} -ErrorAction SilentlyContinue
+$Clusterresourcesname = $clussterresource.name
+$Clusterresourcesownernode = $clussterresource.ownernode  
+$Clustercoreresource = $clussterresource.iscoreresource
+$Clusterresourcetype = $clussterresource.resourcetype 
+$Clusterresourcestate =  $clussterresource.state
+$Clusterresourcechar = $clussterresource.characteristics 
+# | select ownernode,iscoreresource,name,resourcetype,state,characteristics }
+$Clusterservicestatus = $s.status
+$clusterservicestarttype = $s.starttype
+}
+else
+{
+write-host " Cluster is not configured" -ForegroundColor Red
+$s = "Not Configured"
+$clusternames = "Not Configured"
+$clusterNodesname = "Not Configured"
+#$clustername = "Not Configured"
+$clusterNodesstate = "Not configured"
+$Clusterresourcesownernode = "Not configured"
+$Clustercoreresource = "Not configured"
+$Clusterresourcetype = "Not configured"
+$Clusterresourcestate = "Not configured"
+$Clusterresourcechar = "Not configured"
+$Clusterresourcesname = "Not configured"
+$Clusterservicestatus = "Not configured"
+$clusterservicestarttype = "Not configured"
+}
+$array10=@()
+foreach ($cn  in $clusternames)
+{
+$obj10 = new-object -TypeName PSobject
+$obj10| Add-Member -MemberType NoteProperty -Name "Cluster name " -Value $cn
+$array10 += $obj10 
+$array10 | Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 2 -StartColumn 1 -TableName Clustername
+}
+$array11=@()
+foreach ($cr  in $Clusterresourcesownernode)
+{
+$obj11 = new-object -TypeName PSobject
+$obj11 | Add-Member -MemberType NoteProperty -Name "Cluster Resource Owner Node " -Value $cr
+$array11 += $obj11 
+$array11| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 1 -TableName Clusterresourcesownernode
+}
+$array12=@()
+foreach ($ccr  in $Clustercoreresource)
+{
+$obj12 = new-object -TypeName PSobject
+$obj12 | Add-Member -MemberType NoteProperty -Name "is core resource? " -Value $ccr
+$array12 += $obj12 
+$array12| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 2  -TableName Clustercoreresource
+}
+$array13=@()
+foreach ($crt  in $Clusterresourcetype)
+{
+$obj13 = new-object -TypeName PSobject
+$obj13 | Add-Member -MemberType NoteProperty -Name "Cluster resource type " -Value $crt
+$array13 += $obj13 
+$array13| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 3  -TableName Clusterresourcetype
+}
+
+$array19=@()
+foreach ($crs  in $Clusterresourcestate)
+{
+$obj19 = new-object -TypeName PSobject
+$obj19 | Add-Member -MemberType NoteProperty -Name "Cluster resource state " -Value $crs
+$array19 += $obj19 
+$array19| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 4  -TableName Clusterresourcestate
+
+}
+$array14=@()
+foreach ($crc  in $Clusterresourcechar)
+{
+$obj14 = new-object -TypeName PSobject
+$obj14 | Add-Member -MemberType NoteProperty -Name "Cluster resource Characteristics " -Value $crc
+$array14 += $obj14 
+$array14| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 5  -TableName Clusterresourcechar
+
+
+$array15=@()
+foreach ($crn  in $Clusterresourcesname)
+{
+$obj15 = new-object -TypeName PSobject
+$obj15 | Add-Member -MemberType NoteProperty -Name "Cluster resource name " -Value $crn
+$array15 += $obj15 
+$array15| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 6 -StartColumn 6  -TableName Clusterresourcesname
+}
+
+$array16=@()
+foreach ($cnn  in $clusterNodesname)
+{
+$obj16 = new-object -TypeName PSobject
+$obj16 | Add-Member -MemberType NoteProperty -Name "Cluster Node name " -Value $cnn
+$array16 += $obj16 
+$array16| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 18 -StartColumn 1  -TableName clusterNodesname
+}
+$array17=@()
+foreach ($cns  in $clusterNodesstate)
+{
+$obj17 = new-object -TypeName PSobject
+$obj17 | Add-Member -MemberType NoteProperty -Name "Cluster Node Status " -Value $cns
+$array17 += $obj17 
+$array17| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 18 -StartColumn 2  -TableName clusterNodesstate
+}
+$array18=@()
+foreach ($csvs  in $Clusterservicestatus)
+{
+$obj18 = new-object -TypeName PSobject
+$obj18 | Add-Member -MemberType NoteProperty -Name "Cluster Service name " -Value $s
+$obj18 | Add-Member -MemberType NoteProperty -Name "Cluster Service Status " -Value $Clusterservicestatus
+$obj18 | Add-Member -MemberType NoteProperty -Name "Cluster Service starttype " -Value $clusterservicestarttype
+$array18 += $obj18 
+$array18| Export-Excel -Path $ExportPath -WorksheetName "cluster Details" -AutoSize -StartRow 25 -StartColumn 1  -TableName Clusterservicestatus
+}
+}
+}
+Write-Host "Server $server validation completed. Output saved to: $ExportPath" -ForegroundColor Cyan
+}
+

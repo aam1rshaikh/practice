@@ -1,0 +1,288 @@
+AV Set -->
+"availability_sets": {
+            "mjewap-as-main01-nonprod": {
+                "location": "East US 2",
+                "platform_fault_domain_count": 2,
+                "platform_update_domain_count": 5
+            }          
+        }
+
+
+===================================================================================================================
+Non Prod (East US 2) --> mg-main01-nonprod
+
+terraform {
+  backend "azurerm" {
+    key                  = "mje01-vm-nonprod.tfstate"
+    resource_group_name  = "tf-rg-main01-nonprod"
+    storage_account_name = "cftfstrmain01nonprod"
+    container_name       = "tf-nonprod"
+  }
+}
+
+ "foundation": {
+        "network": {
+            "resource_group_name": "core-rg-main01-nonprod",
+            "name": "pvt-vnet-main01-nonprod" 
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlznonprodvmdiag",
+            "resource_group_name": "core-rg-main01-nonprod"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-main01-nonprod",
+            "workspace_name": "mdlzomsmain01nonprod"
+        },
+        "recovery_vault": {
+            "resource_group_name": "rsvault-rg-main01-nonprod",
+            "name": "NSAP-RSV-NonProd-EU2"
+        }
+    }
+
+===================================================================================================================
+
+Non Prod (East US) --> mg-main01-nonprod
+
+terraform {
+  backend "azurerm" {
+    key                  = "b6rapp-nonprod.tfstate"
+    resource_group_name  = "tf-rg-main01-nonprod"
+    storage_account_name = "cftfstrmain01nonprod"
+    container_name       = "tf-nonprod"
+  }
+}
+
+"foundation": {
+        "network": {
+            "resource_group_name": "saplihcore-rg-main01-nonprod",
+            "name": "saplih-vnet-main01-nonprod"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzapnonprodvmdiag",
+            "resource_group_name": "sa-rg-main01-nonprod"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-main01-nonprod",
+            "workspace_name": "mdlzomsmain01nonprod"
+        }
+    }
+
+===================================================================================================================
+Non Prod (North Europe) --> mg-meu01-nonprod
+
+terraform {
+  backend "azurerm" {
+    key                  = "aecappne-vm-nonprod.tfstate"
+    resource_group_name  = "tf-rg-meu01-nonprod"
+    storage_account_name = "cfterraformstrnonprod"
+    container_name       = "tf-nonprod"
+  }
+}
+
+
+"foundation": {
+        "network": {
+            "resource_group_name": "core-rg-meu01-nonprod",
+            "name": "pvt-vnet-meu01-nonprod"
+        },
+        "diagnostics": {
+            "storage_account_name": "vmdiagssameu01nonprod",
+            "resource_group_name": "sa-rg-meu01-nonprod"
+        },
+        "log_analytics": {
+            "resource_group_name": "la-rg-meu01-nonprod",
+            "workspace_name": "main1-law-meu01-nonprod"
+        },
+        "recovery_vault": {
+            "resource_group_name": "rsv-rg-meu01-nonprod",
+            "name": "neu01-rsv-meu01-nonprod"
+        }
+    }
+
+===================================================================================================================
+
+SBXDEV (West US 2)--> mg-stage01-sbxdev
+
+terraform {
+  backend "azurerm" {
+    key                  = "rmsapp01-vm-sbxdev.tfstate"
+    resource_group_name  = "tf-rg-stage01-sbxdev"
+    storage_account_name = "cftfstrstage01sbxdev"
+    container_name       = "tf-sbxdev"
+  }
+}
+
+"foundation": {
+        "network": {
+            "resource_group_name": "core-rg-stage01-sbxdev",
+            "name": "pvt-vnet-stage01-sbxdev"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzsbxdevvmdiag",
+            "resource_group_name": "core-rg-stage01-sbxdev"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-stage01-sbxdev",
+            "workspace_name": "mdlzomsstage01sbxdev"
+        },
+        "recovery_vault": {
+            "resource_group_name": "rsv-rg-stage01-sbxdev",
+            "name": "NSAP-RSV-Stage01-SbxDev-wu2"
+        }
+    }
+
+===================================================================================================================
+
+SBXDEV (West Europe)--> mg-meu01-sbxdev
+
+terraform {
+  backend "azurerm" {
+    key                  = "sstapp-vm-sbxdev.tfstate"
+    resource_group_name  = "tf-rg-meu01-sbxdev"
+    storage_account_name = "cfterraformstoragesbxdev"
+    container_name       = "tf-sbxdev"
+  }
+}
+
+"foundation": {
+        "network": {
+            "resource_group_name": "core-rg-meu01-sbxdev",
+            "name": "pvt-vnet-meu01-sbxdev"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzeusbxdevssadiag",
+            "resource_group_name": "core-rg-meu01-sbxdev"
+        },
+        "log_analytics": {
+            "resource_group_name": "la-rg-meu01-sbxdev",
+            "workspace_name": "main-law-meu01-sbxdev"
+        },
+        "recovery_vault": {
+            "resource_group_name": "rsv-rg-meu01-sbxdev",
+            "name": "neu01-rsv-meu01-sbxdev"
+        }
+    }
+
+
+===================================================================================================================
+
+Prod (East US 2) --> mg-main01-prod
+
+terraform {
+  backend "azurerm" {
+    key                  = "hci-vm-prod.tfstate"
+    resource_group_name  = "tf-rg-main01-prod"
+    storage_account_name = "cftfstrmain01prod"
+    container_name       = "tf-prod"
+  }
+}
+
+ "foundation": {
+        "network": {
+            "resource_group_name": "core-rg-main01-prod",
+            "name": "pvt-vnet-main01-prod"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzprodvmdiag",
+            "resource_group_name": "core-rg-main01-prod"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-main01-prod",
+            "workspace_name": "mdlzomsmain01prod"
+        }
+    }
+
+===================================================================================================================
+Prod (East US) --> mg-main01-prod
+
+terraform {
+  backend "azurerm" {
+    key                  = "aecprod-vm-prod.tfstate"
+    resource_group_name  = "tf-rg-main01-prod"
+    storage_account_name = "cftfstrmain01prod"
+    container_name       = "tf-prod"
+  }
+}
+
+ "foundation": {
+        "network": {
+            "resource_group_name": "saplihcore-rg-main01-prod",
+            "name": "saplih-vnet-main01-prod"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzprodvmdiageu",
+            "resource_group_name": "saplihcore-rg-main01-prod"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-main01-prod",
+            "workspace_name": "mdlzomsmain01prod"
+        },
+        "recovery_vault": {
+            "resource_group_name": "rsvault-rg-main01-prod",
+            "name": "nsapzrs-rsv-main01-prod-eu"
+        }
+    }
+
+
+===================================================================================================================
+
+Prod (North Europe) --> mg-meu01-prod
+
+terraform {
+  backend "azurerm" {
+    key                  = "bms-vm-prod.tfstate"
+    resource_group_name  = "tf-rg-meu01-prod"
+    storage_account_name = "cfterraformstorageprd"
+    container_name       = "tf-prod"
+  }
+}
+
+
+"foundation": {
+        "network": {
+            "resource_group_name": "core-rg-meu01-prod",
+            "name": "pvt-vnet-meu01-prod"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzeuprodssadiag",
+            "resource_group_name": "core-rg-meu01-prod"
+        },
+        "log_analytics": {
+            "resource_group_name": "la-rg-meu01-prod",
+            "workspace_name": "main1-law-meu01-prod"
+        }
+    }
+
+===================================================================================================================
+
+QADR (West US 2) --> mg-stage01-qadr
+
+terraform {
+  backend "azurerm" {
+    key                  = "awq-qadr.tfstate"
+    resource_group_name  = "tf-rg-stage01-qadr"
+    storage_account_name = "cftfstrstage01qadr"
+    container_name       = "tf-qadr"
+  }
+}
+
+ "foundation": {
+        "network": {
+            "resource_group_name": "core-rg-stage01-qadr",
+            "name": "pvt-vnet-stage01-qadr"
+        },
+        "diagnostics": {
+            "storage_account_name": "mdlzqadrvmdiag",
+            "resource_group_name": "core-rg-stage01-qadr"
+        },
+        "log_analytics": {
+            "resource_group_name": "oms-rg-stage01-qadr",
+            "workspace_name": "mdlzomsstage01qadr"
+        }
+    }
+
+===================================================================================================================
+
+"availability_set_id": "/subscriptions/0d749f68-ee04-4891-886c-0af14d9f80a8/resourceGroups/AEC-RG-MAIN01-PROD/providers/Microsoft.Compute/availabilitySets/aecap-as-main01-prod"
+
+"ou_path": "ou=Aecorsoft,ou=servers,OU=azure,DC=krft,DC=net"
